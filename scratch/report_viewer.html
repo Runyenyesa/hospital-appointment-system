@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Software Engineering Report - HAM-RMS</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        @page {
+            size: A4;
+            margin: 2cm;
+        }
+        body {
+            background-color: #f0f2f5;
+            font-family: "Times New Roman", Times, serif;
+            color: #1a1a1a;
+            line-height: 1.6;
+            padding: 40px 0;
+        }
+        .report-page {
+            background: white;
+            width: 210mm;
+            min-height: 297mm;
+            padding: 2.5cm 3cm;
+            margin: 0 auto 30px auto;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+            position: relative;
+        }
+        .title-page {
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            height: 237mm;
+        }
+        h1 { font-size: 28pt; font-weight: bold; margin: 40px 0; text-transform: uppercase; }
+        h2 { font-size: 18pt; font-weight: bold; margin-top: 30px; border-bottom: 2px solid #000; padding-bottom: 10px; text-transform: uppercase; }
+        h3 { font-size: 14pt; font-weight: bold; margin-top: 20px; color: #333; }
+        p, li { font-size: 12pt; text-align: justify; margin-bottom: 15px; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        table, th, td { border: 1px solid #000; padding: 10px; font-size: 11pt; }
+        th { background-color: #f2f2f2; }
+        
+        .toc-list { list-style: none; padding-left: 0; }
+        .toc-list li { display: flex; justify-content: space-between; border-bottom: 1px dotted #ccc; margin-bottom: 8px; }
+        
+        @media print {
+            body { background: none; padding: 0; margin: 0; }
+            .report-page { 
+                box-shadow: none; 
+                margin: 0; 
+                width: 100%; 
+                height: 100%;
+                page-break-after: always;
+            }
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="no-print text-center py-3 bg-primary text-white sticky-top shadow">
+        <p class="mb-0"><strong>ACADEMIC REPORT VIEWER</strong> - Press <strong>Ctrl + P</strong> and set layout to "Portrait" to save as PDF.</p>
+    </div>
+
+    <!-- TITLE PAGE -->
+    <div class="report-page">
+        <div class="title-page">
+            <h4 style="letter-spacing: 2px;">PROJECT REPORT</h4>
+            <h1>DESIGN AND IMPLEMENTATION OF AN INTEGRATED HOSPITAL APPOINTMENT AND MEDICAL RECORDS MANAGEMENT SYSTEM (HAM-RMS)</h1>
+            
+            <div style="margin: 80px 0;">
+                <p><strong>PREPARED BY:</strong></p>
+                <p class="fs-4">[Your Full Name]</p>
+                <p>[Your Registration Number]</p>
+            </div>
+
+            <div style="margin: 60px 0;">
+                <p><strong>COURSE:</strong></p>
+                <p>Software Engineering (CSC 2201)</p>
+                <p>Department of Computer Science</p>
+                <p>[Your University Name]</p>
+            </div>
+
+            <div style="margin-top: 40px;">
+                <p><strong>DATE OF SUBMISSION:</strong></p>
+                <p>May 2026</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- TABLE OF CONTENTS -->
+    <div class="report-page">
+        <h2>TABLE OF CONTENTS</h2>
+        <ul class="toc-list mt-4">
+            <li><span>1. ABSTRACT</span> <span>1</span></li>
+            <li><span>2. CHAPTER ONE: INTRODUCTION</span> <span>2</span></li>
+            <li><span>3. CHAPTER TWO: PROBLEM STATEMENT</span> <span>3</span></li>
+            <li><span>4. CHAPTER THREE: METHODOLOGY</span> <span>4</span></li>
+            <li><span>5. CHAPTER FOUR: SYSTEM ANALYSIS & DESIGN</span> <span>5</span></li>
+            <li><span>6. CHAPTER FIVE: IMPLEMENTATION DETAILS</span> <span>7</span></li>
+            <li><span>7. CHAPTER SIX: TESTING & VALIDATION</span> <span>8</span></li>
+            <li><span>8. CHAPTER SEVEN: CONCLUSION</span> <span>9</span></li>
+            <li><span>9. REFERENCES</span> <span>10</span></li>
+        </ul>
+    </div>
+
+    <!-- CONTENT: ABSTRACT & INTRO -->
+    <div class="report-page">
+        <h2>1. ABSTRACT</h2>
+        <p>
+            The Hospital Appointment and Medical Records Management System (HAM-RMS) is a comprehensive web-based application designed to bridge the operational gaps between administrative scheduling and clinical documentation. Traditional systems often fail to facilitate effective communication when scheduling conflicts arise, leading to high cancellation rates and patient dissatisfaction. HAM-RMS introduces an innovative <strong>Negotiation Engine</strong> that allows staff and patients to propose alternative times within the same request lifecycle. Developed using PHP, MySQL, and Bootstrap 5, the system ensures data integrity, security, and scalability. The project outcome is a functional, user-centric system that significantly reduces administrative overhead and improves the patient-doctor experience through interactive scheduling.
+        </p>
+
+        <h2>2. CHAPTER ONE: INTRODUCTION</h2>
+        <h3>2.1 Background of the Study</h3>
+        <p>
+            The healthcare industry is increasingly reliant on Information and Communication Technology (ICT) to manage the massive influx of patient data and complex scheduling needs. Efficient appointment management is critical to the survival of modern clinics, as it directly impacts patient throughput and resource utilization. In the current landscape, many hospitals still rely on disparate systems for booking and medical records, leading to "data silos."
+        </p>
+        <h3>2.2 Motivation</h3>
+        <p>
+            The primary motivation for this project is the observation of "lost appointments"—instances where a patient is rejected due to a conflict and never returns to the facility. By creating a system that treats an appointment as a collaborative agreement rather than a binary transaction, we can significantly improve the conversion of requests into visits.
+        </p>
+    </div>
+
+    <!-- CONTENT: ANALYSIS & DESIGN -->
+    <div class="report-page">
+        <h2>3. CHAPTER TWO: PROBLEM STATEMENT</h2>
+        <p>
+            Existing hospital management systems often operate as static databases rather than interactive tools. Key issues identified include:
+        </p>
+        <ul>
+            <li><strong>Inflexible Rescheduling:</strong> When a doctor is unavailable, the appointment is usually cancelled, forcing a manual follow-up.</li>
+            <li><strong>Data Fragmentation:</strong> Completed appointments often do not show up in history if no medical record (diagnosis/prescription) was created.</li>
+            <li><strong>Information Asymmetry:</strong> Patients are often unaware of why an appointment was rejected or rescheduled.</li>
+        </ul>
+
+        <h2>4. CHAPTER THREE: METHODOLOGY</h2>
+        <p>
+            The <strong>Iterative Agile Model</strong> was selected for this project. Unlike the traditional Waterfall model, Agile allowed us to develop the system in "Sprints." This ensured that any architectural flaws were caught early and that features like the negotiation engine could be refined based on testing.
+        </p>
+
+        <h2>5. CHAPTER FOUR: SYSTEM ANALYSIS & DESIGN</h2>
+        <h3>5.1 Functional Requirements</h3>
+        <p>
+            FR1: Role-Based Dashboards (Admin, Doctor, Receptionist, Patient).<br>
+            FR2: Dynamic Doctor Selection and Filtering.<br>
+            FR3: Outcome Tracking (Mark as "Done" or "No-show").<br>
+            FR4: Automated Notifications via internal messaging.
+        </p>
+    </div>
+
+    <!-- CONTENT: TESTING & CONCLUSION -->
+    <div class="report-page">
+        <h2>6. CHAPTER FIVE: TESTING & VALIDATION</h2>
+        <p>
+            We employed a comprehensive testing strategy including unit testing, integration testing, and system testing. Below is a summary of key test cases:
+        </p>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Feature</th>
+                    <th>Scenario</th>
+                    <th>Result</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td>TC1</td>
+                    <td>Doctor Filtering</td>
+                    <td>Select Dept "Cardiology"</td>
+                    <td>PASS</td>
+                </tr>
+                <tr>
+                    <td>TC2</td>
+                    <td>Negotiation</td>
+                    <td>Patient accepts proposed time</td>
+                    <td>PASS</td>
+                </tr>
+                <tr>
+                    <td>TC3</td>
+                    <td>History View</td>
+                    <td>Show visit without clinical notes</td>
+                    <td>PASS</td>
+                </tr>
+                <tr>
+                    <td>TC4</td>
+                    <td>Attendance</td>
+                    <td>Mark as "No-show"</td>
+                    <td>PASS</td>
+                </tr>
+            </tbody>
+        </table>
+
+        <h2>7. CHAPTER SIX: CONCLUSION</h2>
+        <p>
+            The HAM-RMS project demonstrates that software engineering is not just about code, but about solving logistical human problems. By implementing the negotiation engine and unified history, we have created a tool that respects the time of both the patient and the healthcare provider.
+        </p>
+
+        <h2>8. REFERENCES</h2>
+        <p>
+            1. Pressman, R. S. (2019). <i>Software Engineering: A Practitioner's Approach</i>. McGraw-Hill.<br>
+            2. Sommerville, I. (2015). <i>Software Engineering</i>. Pearson.
+        </p>
+    </div>
+
+</body>
+</html>

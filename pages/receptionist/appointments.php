@@ -13,68 +13,112 @@ $action = $_GET['action'] ?? 'list';
 
 // Approve appointment
 if ($action === 'approve' && !empty($_GET['id'])) {
-    $apptId = (int) $_GET['id'];
-    $stmt = $db->prepare("UPDATE appointments SET status='approved', reviewed_by=?, reviewed_at=NOW() WHERE appointment_id=?");
-    $stmt->execute([currentUserId(), $apptId]);
-    
-    $stmt = $db->prepare("SELECT patient_id, doctor_id FROM appointments WHERE appointment_id = ?");
-    $stmt->execute([$apptId]);
-    $appt = $stmt->fetch();
-    
-    sendNotification($appt['patient_id'], 'appointment_approved', 'Appointment Approved',
-        'Your appointment has been approved by the reception.', $apptId, 'appointment');
-    
-    if ($appt['doctor_id']) {
-        sendNotification($appt['doctor_id'], 'doctor_assigned', 'New Appointment',
-            'A new appointment has been assigned to you.', $apptId, 'appointment');
+    try {
+        $apptId = (int) $_GET['id'];
+        
+        // Verify appointment exists and is pending
+        $stmt = $db->prepare("SELECT patient_id, doctor_id, status FROM appointments WHERE appointment_id = ?");
+        $stmt->execute([$apptId]);
+        $appt = $stmt->fetch();
+        
+        if (!$appt) {
+            flashMessage('Appointment not found', 'error');
+        } elseif ($appt['status'] !== 'pending') {
+            flashMessage('This appointment has already been processed', 'info');
+        } else {
+            $stmt = $db->prepare("UPDATE appointments SET status='approved', reviewed_by=?, reviewed_at=NOW() WHERE appointment_id=?");
+            $stmt->execute([currentUserId(), $apptId]);
+            
+            sendNotification($appt['patient_id'], 'appointment_approved', 'Appointment Approved',
+                'Your appointment has been approved by the reception.', $apptId, 'appointment');
+            
+            if ($appt['doctor_id']) {
+                sendNotification($appt['doctor_id'], 'doctor_assigned', 'New Appointment',
+                    'A new appointment has been assigned to you.', $apptId, 'appointment');
+            }
+            
+            flashMessage('Appointment approved successfully', 'success');
+        }
+    } catch (Exception $e) {
+        flashMessage('Error: ' . $e->getMessage(), 'error');
     }
-    
-    flashMessage('Appointment approved successfully', 'success');
     redirect('/pages/receptionist/appointments.php');
 }
 
 // Reject appointment
 if ($action === 'reject' && !empty($_GET['id'])) {
-    $apptId = (int) $_GET['id'];
-    $reason = $_GET['reason'] ?? 'Not available at requested time';
-    $stmt = $db->prepare("UPDATE appointments SET status='rejected', reviewed_by=?, reviewed_at=NOW(), review_notes=? WHERE appointment_id=?");
-    $stmt->execute([currentUserId(), $reason, $apptId]);
-    
-    $stmt = $db->prepare("SELECT patient_id FROM appointments WHERE appointment_id = ?");
-    $stmt->execute([$apptId]);
-    $patientId = $stmt->fetchColumn();
-    
-    sendNotification($patientId, 'appointment_rejected', 'Appointment Rejected',
-        'Your appointment was rejected. Reason: ' . $reason, $apptId, 'appointment');
-    
-    flashMessage('Appointment rejected', 'warning');
+    try {
+        $apptId = (int) $_GET['id'];
+        $reason = $_GET['reason'] ?? 'Not available at requested time';
+        
+        $stmt = $db->prepare("UPDATE appointments SET status='rejected', reviewed_by=?, reviewed_at=NOW(), review_notes=? WHERE appointment_id=?");
+        $stmt->execute([currentUserId(), $reason, $apptId]);
+        
+        $stmt = $db->prepare("SELECT patient_id FROM appointments WHERE appointment_id = ?");
+        $stmt->execute([$apptId]);
+        $patientId = $stmt->fetchColumn();
+        
+        if ($patientId) {
+            sendNotification($patientId, 'appointment_rejected', 'Appointment Rejected',
+                'Your appointment was rejected. Reason: ' . $reason, $apptId, 'appointment');
+        }
+        
+        flashMessage('Appointment rejected', 'warning');
+    } catch (Exception $e) {
+        flashMessage('Error: ' . $e->getMessage(), 'error');
+    }
     redirect('/pages/receptionist/appointments.php');
 }
 
-// Update appointment (assign doctor, reschedule)
+// Update appointment (assign doctor, reschedule, or propose new time)
 if ($action === 'update' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $apptId = (int) ($_POST['appointment_id'] ?? 0);
     $doctorId = !empty($_POST['doctor_id']) ? (int) $_POST['doctor_id'] : null;
     $deptId = !empty($_POST['dept_id']) ? (int) $_POST['dept_id'] : null;
     $newDate = $_POST['appointment_date'] ?? null;
     $newTime = $_POST['start_time'] ?? null;
+    $propDate = $_POST['proposed_date'] ?? null;
+    $propTime = $_POST['proposed_time'] ?? null;
+    $isProposal = isset($_POST['is_proposal']) && $_POST['is_proposal'] == '1';
     $notes = trim($_POST['notes'] ?? '');
     
-    $stmt = $db->prepare("UPDATE appointments SET 
-        doctor_id = ?, dept_id = ?, appointment_date = COALESCE(?, appointment_date), 
-        start_time = COALESCE(?, start_time), notes = ?, reviewed_by = ?, reviewed_at = NOW(),
-        reschedule_count = reschedule_count + 1
-        WHERE appointment_id = ?");
-    $stmt->execute([$doctorId, $deptId, $newDate, $newTime, $notes, currentUserId(), $apptId]);
+    if ($isProposal && (!empty($propDate) || !empty($propTime))) {
+        $stmt = $db->prepare("UPDATE appointments SET 
+            doctor_id = ?, dept_id = ?, 
+            proposed_date = ?, proposed_time = ?,
+            status = 'proposed',
+            review_notes = ?, reviewed_by = ?, reviewed_at = NOW(),
+            reschedule_count = reschedule_count + 1
+            WHERE appointment_id = ?");
+        $stmt->execute([$doctorId, $deptId, $propDate, $propTime, $notes, currentUserId(), $apptId]);
+        
+        $msg = 'Appointment proposal sent to patient.';
+        $notifTitle = 'New Appointment Proposal';
+        $notifMsg = 'The receptionist has proposed an alternative time for your appointment: ' . formatDate($propDate) . ' at ' . formatTime($propTime);
+        $notifType = 'appointment_proposed';
+    } else {
+        $stmt = $db->prepare("UPDATE appointments SET 
+            doctor_id = ?, dept_id = ?, 
+            appointment_date = CASE WHEN ? != '' THEN ? ELSE appointment_date END, 
+            start_time = CASE WHEN ? != '' THEN ? ELSE start_time END, 
+            notes = ?, reviewed_by = ?, reviewed_at = NOW(),
+            reschedule_count = reschedule_count + 1
+            WHERE appointment_id = ?");
+        $stmt->execute([$doctorId, $deptId, $newDate, $newDate, $newTime, $newTime, $notes, currentUserId(), $apptId]);
+        
+        $msg = 'Appointment updated successfully';
+        $notifTitle = 'Appointment Updated';
+        $notifMsg = 'Your appointment details have been updated. Please check your appointments.';
+        $notifType = 'appointment_approved';
+    }
     
     $stmt = $db->prepare("SELECT patient_id FROM appointments WHERE appointment_id = ?");
     $stmt->execute([$apptId]);
     $patientId = $stmt->fetchColumn();
     
-    sendNotification($patientId, 'appointment_approved', 'Appointment Updated',
-        'Your appointment details have been updated. Please check your appointments.', $apptId, 'appointment');
+    sendNotification($patientId, $notifType, $notifTitle, $notifMsg, $apptId, 'appointment');
     
-    flashMessage('Appointment updated successfully', 'success');
+    flashMessage($msg, 'success');
     redirect('/pages/receptionist/appointments.php');
 }
 
@@ -179,12 +223,33 @@ include __DIR__ . '/../../includes/header.php';
             
             <div class="row">
                 <div class="col-md-6 mb-3">
-                    <label class="form-label">Reschedule Date</label>
+                    <label class="form-label">Reschedule Date (Confirm now)</label>
                     <input type="date" name="appointment_date" class="form-control" value="<?php echo $editAppt['appointment_date']; ?>">
                 </div>
                 <div class="col-md-6 mb-3">
-                    <label class="form-label">Reschedule Time</label>
+                    <label class="form-label">Reschedule Time (Confirm now)</label>
                     <input type="time" name="start_time" class="form-control" value="<?php echo $editAppt['start_time']; ?>">
+                </div>
+            </div>
+
+            <div class="card bg-light mb-3">
+                <div class="card-body">
+                    <div class="form-check mb-2">
+                        <input class="form-check-input" type="checkbox" name="is_proposal" value="1" id="isProposal">
+                        <label class="form-check-label fw-bold" for="isProposal">
+                            Propose Alternative Time (Patient must accept)
+                        </label>
+                    </div>
+                    <div class="row proposal-fields">
+                        <div class="col-md-6 mb-2">
+                            <label class="form-label small">Proposed Date</label>
+                            <input type="date" name="proposed_date" class="form-control form-control-sm" value="<?php echo $editAppt['proposed_date']; ?>">
+                        </div>
+                        <div class="col-md-6 mb-2">
+                            <label class="form-label small">Proposed Time</label>
+                            <input type="time" name="proposed_time" class="form-control form-control-sm" value="<?php echo $editAppt['proposed_time']; ?>">
+                        </div>
+                    </div>
                 </div>
             </div>
             
@@ -245,7 +310,17 @@ include __DIR__ . '/../../includes/header.php';
                             <?php endif; ?>
                         </td>
                         <td><?php echo e(ucfirst(str_replace('_', ' ', $appt['appointment_type']))); ?></td>
-                        <td><?php echo statusBadge($appt['status']); ?></td>
+                        <td>
+                            <?php echo statusBadge($appt['status']); ?>
+                            <?php if (strpos($appt['review_notes'] ?? '', 'DOCTOR REQUESTED RESCHEDULE') === 0): ?>
+                                <div class="mt-1">
+                                    <span class="badge bg-danger">Dr. Reschedule Req</span>
+                                    <small class="d-block text-danger mt-1" style="font-size: 0.75rem;">
+                                        <?php echo e(str_replace('DOCTOR REQUESTED RESCHEDULE: ', '', $appt['review_notes'])); ?>
+                                    </small>
+                                </div>
+                            <?php endif; ?>
+                        </td>
                         <td>
                             <?php if ($appt['status'] === 'pending'): ?>
                             <a href="?action=approve&id=<?php echo $appt['appointment_id']; ?>" class="btn btn-sm btn-success" title="Approve" onclick="return confirm('Approve?');"><i class="bi bi-check-lg"></i></a>

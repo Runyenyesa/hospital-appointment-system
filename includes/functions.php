@@ -147,7 +147,8 @@ function statusBadge($status) {
         'rejected' => 'bg-danger',
         'completed' => 'bg-primary',
         'cancelled' => 'bg-secondary',
-        'no_show' => 'bg-dark'
+        'no_show' => 'bg-dark',
+        'proposed' => 'bg-info'
     ];
     $class = $classes[$status] ?? 'bg-info';
     $label = ucfirst(str_replace('_', ' ', $status));
@@ -271,10 +272,9 @@ function uploadFile($file, $subdirectory = '') {
 function paginate($query, $params = [], $perPage = 10) {
     $db = getDB();
     
-    // Get total count
-    $countQuery = preg_replace('/SELECT\s+.*?\s+FROM\s+/is', 'SELECT COUNT(*) FROM ', $query, 1);
-    $countQuery = preg_replace('/\s+ORDER\s+BY\s+.*$/i', '', $countQuery);
-    $countQuery = preg_replace('/\s+LIMIT\s+.*$/i', '', $countQuery);
+    // Get total count using a subquery wrapper to handle complex queries (like those with sub-selects)
+    $cleanQuery = preg_replace('/\s+ORDER\s+BY\s+.*$/i', '', $query);
+    $countQuery = "SELECT COUNT(*) FROM ($cleanQuery) AS count_table";
     
     $stmt = $db->prepare($countQuery);
     $stmt->execute($params);

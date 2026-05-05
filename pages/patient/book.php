@@ -17,7 +17,7 @@ $departments = $stmt->fetchAll();
 
 // Get all active doctors with departments
 $stmt = $db->query("SELECT u.user_id, u.first_name, u.last_name, u.specialization, u.consultation_fee,
-                           d.dept_id, d.dept_name
+                           COALESCE(u.dept_id, 0) as dept_id, d.dept_name
                     FROM users u
                     LEFT JOIN departments d ON u.dept_id = d.dept_id
                     WHERE u.role_id = 2 AND u.is_active = 1
@@ -171,21 +171,56 @@ include __DIR__ . '/../../includes/header.php';
 </div>
 
 <script>
-// Filter doctors by department
-document.getElementById('deptSelect').addEventListener('change', function() {
-    const deptId = this.value;
+document.addEventListener('DOMContentLoaded', function() {
+    const deptSelect = document.getElementById('deptSelect');
     const doctorSelect = document.getElementById('doctorSelect');
-    const options = doctorSelect.querySelectorAll('option:not([value=""])');
+    const doctorOptions = Array.from(doctorSelect.querySelectorAll('option:not([value=""])'));
+
+    function filterDoctors() {
+        const deptId = deptSelect.value;
+        let count = 0;
+        
+        doctorOptions.forEach(opt => {
+            const docDeptId = opt.getAttribute('data-dept');
+            if (!deptId || docDeptId === deptId || docDeptId === '0') {
+                opt.style.display = '';
+                count++;
+            } else {
+                opt.style.display = 'none';
+            }
+        });
+
+        // If current selection is hidden, reset it
+        if (doctorSelect.value !== '') {
+            const selectedOpt = doctorSelect.options[doctorSelect.selectedIndex];
+            if (selectedOpt.style.display === 'none') {
+                doctorSelect.value = '';
+            }
+        }
+    }
+
+    function filterDepartments() {
+        const doctorId = doctorSelect.value;
+        if (!doctorId) return;
+
+        const selectedDocOpt = doctorSelect.options[doctorSelect.selectedIndex];
+        const docDeptId = selectedDocOpt.getAttribute('data-dept');
+
+        if (docDeptId && docDeptId !== '0') {
+            deptSelect.value = docDeptId;
+        }
+    }
+
+    deptSelect.addEventListener('change', filterDoctors);
     
-    options.forEach(function(opt) {
-        if (!deptId || opt.getAttribute('data-dept') === deptId) {
-            opt.style.display = '';
-        } else {
-            opt.style.display = 'none';
+    doctorSelect.addEventListener('change', function() {
+        if (this.value !== '') {
+            filterDepartments();
         }
     });
-    
-    doctorSelect.value = '';
+
+    // Initial run in case of back navigation or validation errors
+    if (deptSelect.value) filterDoctors();
 });
 </script>
 

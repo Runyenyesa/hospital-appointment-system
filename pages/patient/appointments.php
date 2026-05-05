@@ -29,7 +29,7 @@ if ($action === 'cancel' && !empty($_GET['id'])) {
     redirect('/pages/patient/appointments.php');
 }
 
-// Reschedule
+// Reschedule (Counter-propose)
 if ($action === 'reschedule' && $_SERVER['REQUEST_METHOD'] === 'POST') {
     $apptId = (int) ($_POST['appointment_id'] ?? 0);
     $newDate = $_POST['new_date'] ?? '';
@@ -39,10 +39,32 @@ if ($action === 'reschedule' && $_SERVER['REQUEST_METHOD'] === 'POST') {
         flashMessage('Please select both date and time', 'error');
     } else {
         $stmt = $db->prepare("UPDATE appointments SET appointment_date=?, start_time=?, status='pending', 
-                              reschedule_count = reschedule_count + 1 WHERE appointment_id=? AND patient_id=?");
+                              reschedule_count = reschedule_count + 1, proposed_date = NULL, proposed_time = NULL
+                              WHERE appointment_id=? AND patient_id=?");
         $stmt->execute([$newDate, $newTime, $apptId, $patientId]);
         
-        flashMessage('Appointment rescheduled. Pending approval.', 'success');
+        flashMessage('Your counter-proposal has been sent. Pending approval.', 'success');
+    }
+    redirect('/pages/patient/appointments.php');
+}
+
+// Accept Proposal
+if ($action === 'accept_proposal' && !empty($_GET['id'])) {
+    $apptId = (int) $_GET['id'];
+    
+    // Get proposal details
+    $stmt = $db->prepare("SELECT proposed_date, proposed_time FROM appointments WHERE appointment_id = ? AND patient_id = ? AND status = 'proposed'");
+    $stmt->execute([$apptId, $patientId]);
+    $appt = $stmt->fetch();
+    
+    if ($appt && $appt['proposed_date']) {
+        $stmt = $db->prepare("UPDATE appointments SET appointment_date = ?, start_time = ?, status = 'approved', 
+                              proposed_date = NULL, proposed_time = NULL WHERE appointment_id = ?");
+        $stmt->execute([$appt['proposed_date'], $appt['proposed_time'], $apptId]);
+        
+        flashMessage('Proposal accepted. Your appointment is now approved.', 'success');
+    } else {
+        flashMessage('Invalid proposal', 'error');
     }
     redirect('/pages/patient/appointments.php');
 }
@@ -133,6 +155,45 @@ include __DIR__ . '/../../includes/header.php';
                                     <i class="bi bi-x-lg me-1"></i>Cancel
                                 </a>
                                 <?php endif; ?>
+                            <?php elseif ($appt['status'] === 'proposed'): ?>
+                                <div class="bg-light p-2 border rounded mb-2 small">
+                                    <strong>Proposal:</strong><br>
+                                    <?php echo formatDate($appt['proposed_date']); ?> at <?php echo formatTime($appt['proposed_time']); ?>
+                                </div>
+                                <div class="d-flex gap-1 flex-column">
+                                    <a href="?action=accept_proposal&id=<?php echo $appt['appointment_id']; ?>" class="btn btn-sm btn-success">
+                                        <i class="bi bi-check-lg me-1"></i>Accept
+                                    </a>
+                                    <button type="button" class="btn btn-sm btn-outline-primary" data-bs-toggle="modal" data-bs-target="#rescheduleModal<?php echo $appt['appointment_id']; ?>">
+                                        <i class="bi bi-arrow-left-right me-1"></i>Counter
+                                    </button>
+                                </div>
+
+                                <!-- Reschedule Modal -->
+                                <div class="modal fade" id="rescheduleModal<?php echo $appt['appointment_id']; ?>" tabindex="-1">
+                                    <div class="modal-dialog">
+                                        <form class="modal-content" method="POST" action="?action=reschedule">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title">Suggest Different Time</h5>
+                                                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <input type="hidden" name="appointment_id" value="<?php echo $appt['appointment_id']; ?>">
+                                                <div class="mb-3">
+                                                    <label class="form-label">New Date</label>
+                                                    <input type="date" name="new_date" class="form-control" required min="<?php echo date('Y-m-d'); ?>">
+                                                </div>
+                                                <div class="mb-3">
+                                                    <label class="form-label">New Time</label>
+                                                    <input type="time" name="new_time" class="form-control" required>
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="submit" class="btn btn-primary">Send Counter Proposal</button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
                             <?php elseif ($appt['status'] === 'completed'): ?>
                                 <a href="<?php echo APP_URL; ?>/pages/patient/history.php?appointment_id=<?php echo $appt['appointment_id']; ?>" class="btn btn-sm btn-info">
                                     <i class="bi bi-eye me-1"></i>View Record

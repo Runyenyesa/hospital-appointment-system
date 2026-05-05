@@ -12,36 +12,63 @@ $db = getDB();
 $doctorId = currentUserId();
 $action = $_GET['action'] ?? 'list';
 
-if ($action === 'complete' && !empty($_GET['id'])) {
-    $apptId = (int) $_GET['id'];
-    $stmt = $db->prepare("UPDATE appointments SET status='completed', completed_at=NOW(), completed_by=? WHERE appointment_id=? AND doctor_id=?");
-    $stmt->execute([$doctorId, $apptId, $doctorId]);
+if ($action === 'mark_attendance' && $_SERVER['REQUEST_METHOD'] === 'POST') {
+    $apptId = (int) ($_POST['appointment_id'] ?? 0);
+    $status = $_POST['attendance_status'] ?? 'completed'; // 'completed' or 'no_show'
     
-    $stmt = $db->prepare("SELECT patient_id FROM appointments WHERE appointment_id = ?");
+    $stmt = $db->prepare("UPDATE appointments SET status=?, completed_at=NOW(), completed_by=? WHERE appointment_id=? AND doctor_id=?");
+    $stmt->execute([$status, $doctorId, $apptId, $doctorId]);
+    
+    $stmt = $db->prepare("SELECT patient_id, appointment_date FROM appointments WHERE appointment_id = ?");
     $stmt->execute([$apptId]);
-    $patientId = $stmt->fetchColumn();
+    $appt = $stmt->fetch();
     
-    sendNotification($patientId, 'appointment_completed', 'Appointment Completed',
-        'Your appointment has been marked as completed. You can view your medical records.', $apptId, 'appointment');
+    $statusLabel = $status === 'completed' ? 'Done' : 'Not Done (No-show)';
+    $msg = "Appointment marked as $statusLabel";
     
-    flashMessage('Appointment marked as completed', 'success');
+    sendNotification($appt['patient_id'], 'appointment_status_update', "Appointment $statusLabel",
+        "Your appointment on " . formatDate($appt['appointment_date']) . " has been marked as $statusLabel.", $apptId, 'appointment');
+    
+    // Notify receptionists
+    $stmt = $db->query("SELECT user_id FROM users WHERE role_id = (SELECT role_id FROM roles WHERE role_slug = 'receptionist')");
+    $receptionists = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    foreach ($receptionists as $recId) {
+        sendNotification($recId, 'appointment_status_update', 'Appointment Outcome',
+            "Appointment #$apptId marked as $statusLabel by Dr. " . $_SESSION['full_name'], $apptId, 'appointment');
+    }
+
+    flashMessage($msg, 'success');
     redirect('/pages/doctor/appointments.php');
 }
 
 if ($action === 'cancel' && !empty($_GET['id'])) {
     $apptId = (int) $_GET['id'];
-    $reason = $_POST['cancellation_reason'] ?? 'Cancelled by doctor';
-    $stmt = $db->prepare("UPDATE appointments SET status='cancelled', cancelled_at=NOW(), cancelled_by=?, cancellation_reason=? WHERE appointment_id=? AND doctor_id=?");
-    $stmt->execute([$doctorId, $reason, $apptId, $doctorId]);
+    $reason = $_POST['cancellation_reason'] ?? 'Not specified';
     
-    $stmt = $db->prepare("SELECT patient_id FROM appointments WHERE appointment_id = ?");
+    // Set status back to pending so receptionist can reschedule, and store doctor's reason
+    $stmt = $db->prepare("UPDATE appointments SET status='pending', reviewed_at=NOW(), reviewed_by=NULL, 
+                          review_notes=?, reschedule_count = reschedule_count + 1 
+                          WHERE appointment_id=? AND doctor_id=?");
+    $stmt->execute(["DOCTOR REQUESTED RESCHEDULE: " . $reason, $apptId, $doctorId]);
+    
+    // Get patient info for notification
+    $stmt = $db->prepare("SELECT patient_id, appointment_date FROM appointments WHERE appointment_id = ?");
     $stmt->execute([$apptId]);
-    $patientId = $stmt->fetchColumn();
+    $apptData = $stmt->fetch();
     
-    sendNotification($patientId, 'appointment_cancelled', 'Appointment Cancelled',
-        'Your appointment has been cancelled by the doctor. Reason: ' . $reason, $apptId, 'appointment');
+    // Notify Patient
+    sendNotification($apptData['patient_id'], 'appointment_reschedule_request', 'Appointment Reschedule Needed',
+        'Your appointment on ' . formatDate($apptData['appointment_date']) . ' needs to be rescheduled by the doctor. Reason: ' . $reason, $apptId, 'appointment');
     
-    flashMessage('Appointment cancelled', 'warning');
+    // Notify all Receptionists
+    $stmt = $db->query("SELECT user_id FROM users WHERE role_id = (SELECT role_id FROM roles WHERE role_slug = 'receptionist')");
+    $receptionists = $stmt->fetchAll(PDO::FETCH_COLUMN);
+    foreach ($receptionists as $recId) {
+        sendNotification($recId, 'doctor_cancel_request', 'Doctor Reschedule Request',
+            'Dr. ' . $_SESSION['full_name'] . ' requested to reschedule appointment #' . $apptId . '. Reason: ' . $reason, $apptId, 'appointment');
+    }
+    
+    flashMessage('Reschedule request sent to receptionist', 'success');
     redirect('/pages/doctor/appointments.php');
 }
 
@@ -205,9 +232,58 @@ include __DIR__ . '/../../includes/header.php';
                         <td><?php echo statusBadge($appt['status']); ?></td>
                         <td>
                             <?php if ($appt['status'] === 'approved'): ?>
-                            <a href="?action=complete&id=<?php echo $appt['appointment_id']; ?>" class="btn btn-sm btn-success" onclick="return confirm('Complete this appointment?');"><i class="bi bi-check-lg"></i></a>
+                            <div class="dropdown d-inline-block">
+                                <button class="btn btn-sm btn-success dropdown-toggle" type="button" data-bs-toggle="dropdown">
+                                    <i class="bi bi-check-circle me-1"></i>Mark Outcome
+                                </button>
+                                <ul class="dropdown-menu">
+                                    <li>
+                                        <form method="POST" action="?action=mark_attendance">
+                                            <input type="hidden" name="appointment_id" value="<?php echo $appt['appointment_id']; ?>">
+                                            <input type="hidden" name="attendance_status" value="completed">
+                                            <button type="submit" class="dropdown-item text-success">
+                                                <i class="bi bi-check-lg me-2"></i>Done (Attended)
+                                            </button>
+                                        </form>
+                                    </li>
+                                    <li>
+                                        <form method="POST" action="?action=mark_attendance">
+                                            <input type="hidden" name="appointment_id" value="<?php echo $appt['appointment_id']; ?>">
+                                            <input type="hidden" name="attendance_status" value="no_show">
+                                            <button type="submit" class="dropdown-item text-danger">
+                                                <i class="bi bi-x-lg me-2"></i>Not Done (No-show)
+                                            </button>
+                                        </form>
+                                    </li>
+                                </ul>
+                            </div>
                             <a href="?action=notes&id=<?php echo $appt['appointment_id']; ?>" class="btn btn-sm btn-info"><i class="bi bi-journal-text"></i></a>
-                            <a href="?action=cancel&id=<?php echo $appt['appointment_id']; ?>" class="btn btn-sm btn-danger" onclick="return confirm('Cancel this appointment?');"><i class="bi bi-x-lg"></i></a>
+                            <button type="button" class="btn btn-sm btn-danger" title="Request Reschedule" data-bs-toggle="modal" data-bs-target="#cancelModal<?php echo $appt['appointment_id']; ?>">
+                                <i class="bi bi-calendar-x"></i>
+                            </button>
+
+                            <!-- Cancel/Reschedule Modal -->
+                            <div class="modal fade" id="cancelModal<?php echo $appt['appointment_id']; ?>" tabindex="-1">
+                                <div class="modal-dialog">
+                                    <form class="modal-content" method="POST" action="?action=cancel&id=<?php echo $appt['appointment_id']; ?>">
+                                        <div class="modal-header">
+                                            <h5 class="modal-title">Request Reschedule</h5>
+                                            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                                        </div>
+                                        <div class="modal-body">
+                                            <p>Please provide a reason why you need to reschedule this appointment. This will be sent to the receptionist.</p>
+                                            <div class="mb-3">
+                                                <label class="form-label">Reason for Reschedule</label>
+                                                <textarea name="cancellation_reason" class="form-control" rows="3" required placeholder="e.g. Personal emergency, surgical conflict..."></textarea>
+                                            </div>
+                                        </div>
+                                        <div class="modal-footer">
+                                            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                                            <button type="submit" class="btn btn-danger">Submit Request</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
                             <?php elseif ($appt['status'] === 'completed'): ?>
                             <a href="?action=notes&id=<?php echo $appt['appointment_id']; ?>" class="btn btn-sm btn-info"><i class="bi bi-eye"></i> View Notes</a>
                             <?php else: ?>
